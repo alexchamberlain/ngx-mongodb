@@ -1,31 +1,25 @@
-nginx-gridfs
+ngx-mongodb
 ============
+Forked from mdirolf/nginx-gridfs
+
 :Authors:
-    Mike Dirolf <mike@dirolf.com>,
-    Chris Triolo,
-    and everyone listed in the Credits section below
+    Alex Chamberlain <alex@alexchamberlain.co.uk>
+
+:Authors of nginx-gridfs:
+    Mike Dirolf <mike@dirolf.com>, Chris Triolo, and everyone listed in the Credits (nginx-gridfs) section below
 
 About
 =====
-**nginx-gridfs** is an `Nginx <http://nginx.net/>`_ module to serve
-content directly from `MongoDB <http://www.mongodb.org/>`_'s `GridFS
-<http://www.mongodb.org/display/DOCS/GridFS>`_.
+**ngx-mongodb** is an `Nginx <http://nginx.net/>`_ module to serve
+content directly from `MongoDB <http://www.mongodb.org/>` using
+a REST over HTTP interface.
 
-Version
-============
-The minor version will be incremented with each release until
-a stable 1.0 is reached. To check out a particular version::
+.. Version
+  ============
+  The minor version will be incremented with each release until
+  a stable 1.0 is reached. To check out a particular version::
 
-    $ git checkout v0.8
-
-Dependencies
-============
-**nginx-gridfs** requires the Mongo-C-Driver which is a submodule to
-this repository. To check out the submodule (after cloning this
-repository), run::
-
-    $ git submodule init
-    $ git submodule update
+  $ git checkout v0.8
 
 Installation
 ============
@@ -33,11 +27,10 @@ Installing Nginx modules requires rebuilding Nginx from source:
 
 * Grab the `Nginx source <http://nginx.net/>`_ and unpack it.
 * Clone this repository somewhere on your machine.
-* Check out the required submodule, as described above.
 * Change to the directory containing the Nginx source.
 * Now build::
 
-    $ ./configure --add-module=/path/to/nginx-gridfs/source/
+    $ ./configure --add-module=/path/to/ngx-mongodb/source/
     $ make
     $ make install
 
@@ -47,17 +40,17 @@ Configuration
 Directives
 ----------
 
-**gridfs**
+**mongodb-rest**
 
-:syntax: *gridfs DB_NAME [root_collection=ROOT] [field=QUERY_FIELD] [type=QUERY_TYPE] [user=USERNAME] [pass=PASSWORD]* 
+:syntax: *mongodb-rest DB_NAME [field=QUERY_FIELD] [type=QUERY_TYPE] [user=USERNAME] [pass=PASSWORD]* 
 :default: *NONE*
 :context: location
 
-This directive enables the **nginx-gridfs** module at a given location. The 
+This directive enables the **ngx-mongodb** module at a given location. The 
 only required parameter is DB_NAME to specify the database to serve files from. 
 
-* *root_collection=* specify the root_collection(prefix) of the GridFS. default: *fs*
-* *field=* specify the field to query. Supported fields include *_id* and *filename*. default: *_id*
+.. * *root_collection=* specify the root_collection(prefix) of the GridFS. default: *fs*
+* *field=* specify the field to query. Supported fields include *_id*. default: *_id*
 * *type=* specify the type to query. Supported types include *objectid*, *string* and *int*. default: *objectid*
 * *user=* specify a username if your mongo database requires authentication. default: *NULL*
 * *pass=* specify a password if your mongo database requires authentication. default: *NULL*
@@ -86,57 +79,18 @@ Sample Configurations
 
 Here is a sample configuration in the relevant section of an *nginx.conf*::
 
-  location /gridfs/ {
-      gridfs my_app;
+  location /db/ {
+      mongodb-rest test;
   }
 
-This will set up Nginx to serve the file in gridfs with _id *ObjectId("a12...")*
-for any request to */gridfs/a12...*
+.. Known Issues / TODO / Things You Should Hack On
+  ===============================================
 
-Here is another configuration::
+  * HTTP range support for partial downloads
+  * Better error handling / logging
 
-  location /gridfs/ {
-      gridfs my_app field=filename type=string;
-      mongo 127.0.0.1:27017;
-  }
-
-This will set up Nginx to serve the file in gridfs with filename *foo*
-for any request to */gridfs/foo*
-
-Here's how to connect to a replica set called "foo" with two seed nodes::
-
-  location /gridfs/ {
-      gridfs my_app field=filename type=string;
-      mongo "foo"
-            10.7.2.27:27017
-            10.7.2.28:27017;
-  }
-
-Here is another configuration::
-
-  location /gridfs/ {
-      gridfs my_app 
-             root_collection=pics 
-             field=_id 
-             type=int
-             user=foo 
-             pass=bar;
-      mongo 127.0.0.1:27017;
-  } 
-
-This will set up Nginx to communicate with the mongod at 127.0.0.1:27017 and 
-authenticate use of database *my_app* with username/password combo *foo/bar*.
-The gridfs root_collection is specified as *pics*. Nginx will then serve the 
-file in gridfs with _id *123...* for any request to */gridfs/123...*
-
-Known Issues / TODO / Things You Should Hack On
-===============================================
-
-* HTTP range support for partial downloads
-* Better error handling / logging
-
-Credits
-=======
+Credits (nginx-gridfs)
+=====================
 
 * Sho Fukamachi (sho) - towards compatibility with newer boost versions
 * Olivier Bregeras (stunti) - better handling of binary content
@@ -147,6 +101,6 @@ Credits
 
 License
 =======
-**nginx-gridfs** is dual licensed under the Apache License, Version
+**ngx-mongodb** is dual licensed under the Apache License, Version
 2.0 and the GNU General Public License, either version 2 or (at your
 option) any later version. See *LICENSE* for details.
