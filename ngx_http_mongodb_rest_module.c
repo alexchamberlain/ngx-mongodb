@@ -45,15 +45,15 @@
 #define FALSE 0
 
 
-/* Standard Includes */
-#include <signal.h>
-#include <stdio.h>
-#include <unistd.h>
-
 /* Nginx Includes */
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+
+/* Standard Includes */
+#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
 
 /* Mongo Includes - link with -lmongo -lbson */
 #include <mongodb-c/mongo.h>
@@ -180,7 +180,7 @@ static ngx_command_t ngx_http_mongodb_rest_commands[] = {
 
 
 static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request);
-static void ngx_http_mongodb_rest_cleanup(void* data);
+//static void ngx_http_mongodb_rest_cleanup(void* data);
 
 static ngx_array_t ngx_http_mongo_connections;
 
@@ -697,28 +697,10 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     ngx_str_t full_uri;
     char* value;
     ngx_http_mongo_connection_t *mongo_conn;
-    gridfs gfs;
-    gridfile gfile;
-    gridfs_offset length;
-    ngx_uint_t numchunks;
-    char* contenttype = NULL;
-    char* md5;
-    bson_date_t last_modified;
 
-    volatile ngx_uint_t i;
     ngx_int_t rc = NGX_OK;
     bson query;
     bson_oid_t oid;
-    mongo_cursor ** cursors;
-    gridfs_offset chunk_len;
-    const char * chunk_data;
-    bson_iterator it;
-    bson chunk;
-    ngx_pool_cleanup_t* mongodb_rest_cln;
-    ngx_http_mongodb_rest_cleanup_t* mongodb_rest_clndata;
-    int status;
-    volatile ngx_uint_t e = FALSE; 
-    volatile ngx_uint_t ecounter = 0;
 
     mongodb_rest_conf = ngx_http_get_module_loc_conf(request, ngx_http_mongodb_rest_module);
     core_conf = ngx_http_get_module_loc_conf(request, ngx_http_core_module);
@@ -768,26 +750,7 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
         return NGX_HTTP_BAD_REQUEST;
     }
 
-    // ---------- RETRIEVE GRIDFILE ---------- //
-
-    /*do {
-        e = FALSE;
-        if (gridfs_init(&mongo_conn->conn,
-                        (const char*)mongodb_rest_conf->db.data,
-                        (const char*)mongodb_rest_conf->root_collection.data,
-                        &gfs) != MONGO_OK) {
-            e = TRUE; ecounter++;
-            if (ecounter > MONGO_MAX_RETRIES_PER_REQUEST
-                || ngx_http_mongo_reconnect(request->connection->log, mongo_conn) == NGX_ERROR
-                || ngx_http_mongo_reauth(request->connection->log, mongo_conn) == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
-                              "Mongo connection dropped, could not reconnect");
-                if(&mongo_conn->conn.connected) { mongo_disconnect(&mongo_conn->conn); }
-                free(value);
-                return NGX_HTTP_SERVICE_UNAVAILABLE;
-            }
-        }
-    } while (e);*/
+    // ---------- RETRIEVE OBJECT ---------- //
 
     bson_init(&query);
     switch (mongodb_rest_conf->type) {
@@ -804,6 +767,11 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     }
     bson_finish(&query);
 
+    int ql = json_length(&query);
+    char * qs = (char *) ngx_palloc(request->pool, ql);
+    tojson(&query, qs);
+    ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, qs);
+
     mongo_cursor cursor;
 
     mongo_cursor_init(&cursor, &mongo_conn->conn, "test.test");
@@ -812,10 +780,7 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     if(mongo_cursor_next(&cursor) != MONGO_OK) {
       return NGX_HTTP_NOT_FOUND;
     }
-      /*bson_iterator iterator[1];
-      if(bson_find( iterator, mongo_cursor_bson( cursor ), "name" )) {
-	printf( "name: %s\n", bson_iterator_string( it ) );
-      }*/
+
     const bson * b = mongo_cursor_bson(&cursor);
     int l = json_length(b);
     char * s = (char *) malloc(l);
@@ -825,6 +790,8 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     
     tojson(b, s);
 
+    ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, "JSON: %s (%d/%d)", s, strlen(s), l);
+
     mongo_cursor_destroy(&cursor);
     bson_destroy(&query);
     free(value);
@@ -832,161 +799,42 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     // ---------- SEND THE HEADERS ---------- //
 
     request->headers_out.status = NGX_HTTP_OK;
-    request->headers_out.content_length_n = l;
-    if (contenttype != NULL) {
-        request->headers_out.content_type.len = strlen(contenttype);
-        request->headers_out.content_type.data = (u_char*)contenttype;
-    }
-    else ngx_http_set_content_type(request);
-
-    // use md5 field as ETag if possible
-    /*if (md5 != NULL) {
-        request->headers_out.etag = ngx_list_push(&request->headers_out.headers);
-        request->headers_out.etag->hash = 1;
-        request->headers_out.etag->key.len = sizeof("ETag") - 1;
-        request->headers_out.etag->key.data = (u_char*)"ETag";
-
-        ngx_buf_t *b;  
-        b = ngx_create_temp_buf(request->pool, strlen(md5) + 2);  
-        b->last = ngx_sprintf(b->last, "\"%s\"", md5);
-        request->headers_out.etag->value.len = strlen(md5) + 2;
-        request->headers_out.etag->value.data = b->start;
-    }*/
-    
-    // use uploadDate field as last_modified if possible
-    /*if (last_modified) {
-        request->headers_out.last_modified_time = (time_t)(last_modified/1000);
-    }*/
-
-    /* Determine if content is gzipped, set headers accordingly */
-    /*if ( gridfile_get_boolean(&gfile,"gzipped") ) {
-        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0, gridfile_get_field(&gfile,"gzipped") );
-        request->headers_out.content_encoding = ngx_list_push(&request->headers_out.headers);
-        if (request->headers_out.content_encoding == NULL) {
-            gridfile_destroy(&gfile);
-            gridfs_destroy(&gfs);
-            return NGX_ERROR;
-        }
-        request->headers_out.content_encoding->hash = 1;
-        request->headers_out.content_encoding->key.len = sizeof("Content-Encoding") - 1;
-        request->headers_out.content_encoding->key.data = (u_char *) "Content-Encoding";
-        request->headers_out.content_encoding->value.len = sizeof("gzip") - 1;
-        request->headers_out.content_encoding->value.data = (u_char *) "gzip";
-    }*/
+    request->headers_out.content_length_n = l -1;
+    //ngx_http_set_content_type("text/json");
+    ngx_str_set(&request->headers_out.content_type, "text/json");
 
     ngx_http_send_header(request);
 
     // ---------- SEND THE BODY ---------- //
 
-    /* Empty file */
-    /*if (numchunks == 0) {
-        // Allocate space for the response buffer 
-        buffer = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
-        if (buffer == NULL) {
-            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
-                          "Failed to allocate response buffer");
-            gridfile_destroy(&gfile);
-            gridfs_destroy(&gfs);
-            return NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-
-        buffer->pos = NULL;
-        buffer->last = NULL;
-        buffer->memory = 1;
-        buffer->last_buf = 1;
-        out.buf = buffer;
-        out.next = NULL;
-
-        gridfile_destroy(&gfile);
-        gridfs_destroy(&gfs);
-
-        return ngx_http_output_filter(request, &out);
-    }
-    
-    cursors = (mongo_cursor **)ngx_pcalloc(request->pool, sizeof(mongo_cursor *) * numchunks);
-    if (cursors == NULL) {
-      gridfile_destroy(&gfile);
-      gridfs_destroy(&gfs);
+    /* Allocate space for the response buffer */
+    buffer = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
+    if (buffer == NULL) {
+      ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+		    "Failed to allocate response buffer");
       return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-    
-    ngx_memzero( cursors, sizeof(mongo_cursor *) * numchunks);
 
-    // Hook in the cleanup function 
-    mongodb_rest_cln = ngx_pool_cleanup_add(request->pool, sizeof(ngx_http_mongodb_rest_cleanup_t));
-    if (mongodb_rest_cln == NULL) {
-      gridfile_destroy(&gfile);
-      gridfs_destroy(&gfs);
-      return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    /* Set up the buffer chain */
+    buffer->pos = (u_char*)s;
+    buffer->last = (u_char*)s + l - 1; // Don't write NULL
+    buffer->memory = 1;
+    buffer->last_buf = 1;
+    out.buf = buffer;
+    out.next = NULL;
+
+    /* Serve the Chunk */
+    rc = ngx_http_output_filter(request, &out);
+
+    /* TODO: More Codes to Catch? */
+    if (rc == NGX_ERROR) {
+      return NGX_ERROR;
     }
-    mongodb_rest_cln->handler = ngx_http_mongodb_rest_cleanup;
-    mongodb_rest_clndata = mongodb_rest_cln->data;
-    mongodb_rest_clndata->cursors = cursors;
-    mongodb_rest_clndata->numchunks = numchunks;*/
-
-    /* Read and serve chunk by chunk */
-    //for (i = 0; i < numchunks; i++) {
-
-        /* Allocate space for the response buffer */
-        buffer = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
-        if (buffer == NULL) {
-            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
-                          "Failed to allocate response buffer");
-            //gridfile_destroy(&gfile);
-            //gridfs_destroy(&gfs);
-            return NGX_HTTP_INTERNAL_SERVER_ERROR;
-        }
-
-        /* Fetch the chunk from mongo */
-        /*do {
-            e = FALSE;
-            cursors[i] = gridfile_get_chunks(&gfile, i, 1);
-            if (!(cursors[i] && mongo_cursor_next(cursors[i]) == MONGO_OK)) {
-                e = TRUE; ecounter++;
-                if (ecounter > MONGO_MAX_RETRIES_PER_REQUEST 
-                    || ngx_http_mongo_reconnect(request->connection->log, mongo_conn) == NGX_ERROR
-                    || ngx_http_mongo_reauth(request->connection->log, mongo_conn) == NGX_ERROR) {
-                    ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
-                                  "Mongo connection dropped, could not reconnect");
-                    if(&mongo_conn->conn.connected) { mongo_disconnect(&mongo_conn->conn); }
-                    gridfile_destroy(&gfile);
-                    gridfs_destroy(&gfs);
-                    return NGX_HTTP_SERVICE_UNAVAILABLE;
-                }
-            }
-        } while (e);*/
-
-        /*chunk = cursors[i]->current;
-        bson_find(&it, &chunk, "data");
-        chunk_len = bson_iterator_bin_len( &it );
-        chunk_data = bson_iterator_bin_data( &it );*/
-
-        /* Set up the buffer chain */
-        buffer->pos = (u_char*)s;
-        buffer->last = (u_char*)s + l;
-        buffer->memory = 1;
-        buffer->last_buf = 1;
-        out.buf = buffer;
-        out.next = NULL;
-
-        /* Serve the Chunk */
-        rc = ngx_http_output_filter(request, &out);
-
-        /* TODO: More Codes to Catch? */
-        if (rc == NGX_ERROR) {
-            gridfile_destroy(&gfile);
-            gridfs_destroy(&gfs);
-            return NGX_ERROR;
-        }
-    //}
-
-    /*gridfile_destroy(&gfile);
-    gridfs_destroy(&gfs);*/
 
     return rc;
 }
 
-static void ngx_http_mongodb_rest_cleanup(void* data) {
+/*static void ngx_http_mongodb_rest_cleanup(void* data) {
     ngx_http_mongodb_rest_cleanup_t* mongodb_rest_clndata;
     volatile ngx_uint_t i;
 
@@ -995,4 +843,4 @@ static void ngx_http_mongodb_rest_cleanup(void* data) {
     for (i = 0; i < mongodb_rest_clndata->numchunks; i++) {
         mongo_cursor_destroy(mongodb_rest_clndata->cursors[i]);
     }
-}
+}*/
