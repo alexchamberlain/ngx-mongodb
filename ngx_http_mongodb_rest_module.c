@@ -688,19 +688,116 @@ static int url_decode(char * filename) {
     return 1;
 }
 
+static unsigned char ngx_http_mongodb_rest_query_init(bson * query, bson_type type, const char * field, const char * value) {
+  bson_oid_t oid;
+
+  bson_init(query);
+  switch (type) {
+    case  BSON_OID:
+      bson_oid_from_string(&oid, value);
+      bson_append_oid(query, field, &oid);
+      break;
+    case BSON_INT:
+      bson_append_int(query, field, ngx_atoi((u_char*)value, strlen(value)));
+      break;
+    case BSON_STRING:
+      bson_append_string(query, field, value);
+      break;
+    default:
+      return 0;
+      break;
+  }
+  bson_finish(query);
+
+  /*int ql = json_length(&query);
+  char * qs = (char *) ngx_palloc(request->pool, ql);
+  tojson(&query, qs);
+  ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, qs);*/
+
+  return 1;
+}
+
+static ngx_int_t ngx_http_mongodb_rest_get_handler(ngx_http_request_t* request, mongo * conn, bson_type type, const char * field, char * collection, const char * value) {
+  ngx_buf_t* buffer;
+  ngx_chain_t out;
+
+  bson query;
+  mongo_cursor cursor;
+
+  const bson * b;
+  int l;
+  char * s;
+
+  ngx_int_t rc;
+
+  if(!ngx_http_mongodb_rest_query_init(&query, type, field, value)) {
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  }
+
+  // ---------- RETRIEVE OBJECT ---------- //
+  mongo_cursor_init(&cursor, conn, "test.test");
+  mongo_cursor_set_query(&cursor, &query);
+
+  if(mongo_cursor_next(&cursor) != MONGO_OK) {
+    return NGX_HTTP_NOT_FOUND;
+  }
+
+  b = mongo_cursor_bson(&cursor);
+  l = json_length(b);
+  s = (char *) ngx_palloc(request->pool, l);
+  
+  if(s == NULL)
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  
+  tojson(b, s);
+
+  ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, "JSON: %s (%d/%d)", s, strlen(s), l-1);
+
+  mongo_cursor_destroy(&cursor);
+  bson_destroy(&query);
+
+  // ---------- SEND THE HEADERS ---------- //
+
+  request->headers_out.status = NGX_HTTP_OK;
+  request->headers_out.content_length_n = l -1;
+  ngx_str_set(&request->headers_out.content_type, "text/json");
+
+  ngx_http_send_header(request);
+
+  // ---------- SEND THE BODY ---------- //
+
+  /* Allocate space for the response buffer */
+  buffer = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
+  if (buffer == NULL) {
+    ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+		  "Failed to allocate response buffer");
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  }
+
+  /* Set up the buffer chain */
+  buffer->pos = (u_char*)s;
+  buffer->last = (u_char*)s + l - 1; // Don't write NULL
+  buffer->memory = 1;
+  buffer->last_buf = 1;
+  out.buf = buffer;
+  out.next = NULL;
+
+  /* Serve the Chunk */
+  rc = ngx_http_output_filter(request, &out);
+
+  /* TODO: Do we need to do anything on error? */
+  return rc;
+}
+
 static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     ngx_http_mongodb_rest_loc_conf_t* mongodb_rest_conf;
     ngx_http_core_loc_conf_t* core_conf;
-    ngx_buf_t* buffer;
-    ngx_chain_t out;
     ngx_str_t location_name;
     ngx_str_t full_uri;
     char* value;
     ngx_http_mongo_connection_t *mongo_conn;
 
     ngx_int_t rc = NGX_OK;
-    bson query;
-    bson_oid_t oid;
 
     mongodb_rest_conf = ngx_http_get_module_loc_conf(request, ngx_http_mongodb_rest_module);
     core_conf = ngx_http_get_module_loc_conf(request, ngx_http_core_module);
@@ -750,97 +847,49 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
         return NGX_HTTP_BAD_REQUEST;
     }
 
-    // ---------- RETRIEVE OBJECT ---------- //
+    unsigned char* m = request->method_name.data;
+    size_t ml = request->method_name.len;
 
-    bson_init(&query);
-    switch (mongodb_rest_conf->type) {
-      case  BSON_OID:
-        bson_oid_from_string(&oid, value);
-        bson_append_oid(&query, (char*)mongodb_rest_conf->field.data, &oid);
+    switch(ml) {
+      case 3:
+        if(m[0] == 'G'
+	  && m[1] == 'E'
+	  && m[2] == 'T') {
+          rc = ngx_http_mongodb_rest_get_handler(request, &mongo_conn->conn, mongodb_rest_conf->type, (char*) mongodb_rest_conf->field.data, "test", value);
+	} else if(m[0] == 'P'
+	  && m[1] == 'U'
+	  && m[2] == 'T') {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	} else {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	}
+	break;
+      case 4:
+	if(m[0] == 'P'
+	  && m[1] == 'O'
+	  && m[2] == 'S'
+	  && m[3] == 'T') {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	} else {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	}
+	break;
+      case 6:
+	if(m[0] == 'D'
+	  && m[1] == 'E'
+	  && m[2] == 'L'
+	  && m[3] == 'E'
+	  && m[4] == 'T'
+	  && m[5] == 'E') {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	} else {
+	  rc = NGX_HTTP_NOT_ALLOWED;
+	}
         break;
-      case BSON_INT:
-	bson_append_int(&query, (char*)mongodb_rest_conf->field.data, ngx_atoi((u_char*)value, strlen(value)));
-        break;
-      case BSON_STRING:
-        bson_append_string(&query, (char*)mongodb_rest_conf->field.data, value);
-        break;
+      default:
+        rc = NGX_HTTP_NOT_ALLOWED;
     }
-    bson_finish(&query);
 
-    int ql = json_length(&query);
-    char * qs = (char *) ngx_palloc(request->pool, ql);
-    tojson(&query, qs);
-    ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, qs);
-
-    mongo_cursor cursor;
-
-    mongo_cursor_init(&cursor, &mongo_conn->conn, "test.test");
-    mongo_cursor_set_query(&cursor, &query);
-
-    if(mongo_cursor_next(&cursor) != MONGO_OK) {
-      return NGX_HTTP_NOT_FOUND;
-    }
-
-    const bson * b = mongo_cursor_bson(&cursor);
-    int l = json_length(b);
-    char * s = (char *) malloc(l);
-    
-    if(s == NULL)
-      return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    
-    tojson(b, s);
-
-    ngx_log_error(NGX_LOG_DEBUG, request->connection->log,0, "JSON: %s (%d/%d)", s, strlen(s), l);
-
-    mongo_cursor_destroy(&cursor);
-    bson_destroy(&query);
     free(value);
-
-    // ---------- SEND THE HEADERS ---------- //
-
-    request->headers_out.status = NGX_HTTP_OK;
-    request->headers_out.content_length_n = l -1;
-    //ngx_http_set_content_type("text/json");
-    ngx_str_set(&request->headers_out.content_type, "text/json");
-
-    ngx_http_send_header(request);
-
-    // ---------- SEND THE BODY ---------- //
-
-    /* Allocate space for the response buffer */
-    buffer = ngx_pcalloc(request->pool, sizeof(ngx_buf_t));
-    if (buffer == NULL) {
-      ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
-		    "Failed to allocate response buffer");
-      return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    /* Set up the buffer chain */
-    buffer->pos = (u_char*)s;
-    buffer->last = (u_char*)s + l - 1; // Don't write NULL
-    buffer->memory = 1;
-    buffer->last_buf = 1;
-    out.buf = buffer;
-    out.next = NULL;
-
-    /* Serve the Chunk */
-    rc = ngx_http_output_filter(request, &out);
-
-    /* TODO: More Codes to Catch? */
-    if (rc == NGX_ERROR) {
-      return NGX_ERROR;
-    }
-
     return rc;
 }
-
-/*static void ngx_http_mongodb_rest_cleanup(void* data) {
-    ngx_http_mongodb_rest_cleanup_t* mongodb_rest_clndata;
-    volatile ngx_uint_t i;
-
-    mongodb_rest_clndata = data;
-
-    for (i = 0; i < mongodb_rest_clndata->numchunks; i++) {
-        mongo_cursor_destroy(mongodb_rest_clndata->cursors[i]);
-    }
-}*/
