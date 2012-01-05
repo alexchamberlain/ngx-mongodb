@@ -1,6 +1,7 @@
 /*
- * Copyright 2009-2010 Michael Dirolf
- *
+ * Copyright 2012 Alex Chamberlain
+ * Some portions Copyright 2009-2010 Michael Dirolf
+
  * Dual Licensed under the Apache License, Version 2.0 and the GNU
  * General Public License, version 2 or (at your option) any later
  * version.
