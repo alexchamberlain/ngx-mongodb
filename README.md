@@ -28,7 +28,7 @@ Installing Nginx modules requires rebuilding Nginx from source:
 
 **mongodb-rest**
 
-| syntax  | *mongodb-rest DB\_NAME [field=QUERY\_FIELD] [type=QUERY\_TYPE] [user=USERNAME] [pass=PASSWORD]* |
+| syntax  | ```mongodb-rest DB\_NAME [field=QUERY\_FIELD] [type=QUERY\_TYPE] [user=USERNAME] [pass=PASSWORD]``` |
 | -----:  | -----    |
 | default | *NONE*   |
 | context | location |
@@ -50,16 +50,16 @@ files from.
 
 When connecting to a single server:
 
-| syntax  | *mongo MONGOD\_HOST* |
+| syntax  | ```mongo MONGOD\_HOST``` |
 | -----:  | -----    |
-| default | *127.0.0.1:27017* |
+| default | ```127.0.0.1:27017``` |
 | context | location |
 
 When connecting to a replica set:
 
-| syntax  | *mongo REPLICA\_SET\_NAME* *MONGOD\_SEED\_1* *MONGOD\_SEED\_2* |
+| syntax  | ```mongo REPLICA\_SET\_NAME* *MONGOD\_SEED\_1* *MONGOD\_SEED\_2``` |
 | -----:  | -----    |
-| default | *127.0.0.1:27017* |
+| default | ```127.0.0.1:27017``` |
 | context | location |
 
 This directive specifies a mongod or replica set to connect to.
