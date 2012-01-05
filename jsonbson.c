@@ -14,7 +14,7 @@ int json_length(const bson* b) {
     l += strlen(key) + 3; // "$key":
     switch(t) {
       case BSON_OID:
-        l += 24;
+        l += 26;
 	break;
       case BSON_BOOL:
         if(bson_iterator_bool(&i)) {
@@ -78,8 +78,15 @@ void tojson(const bson* b, char * s) {
 	  {
 	    bson_oid_t * id;
 	    id = bson_iterator_oid(&i);
+
+	    *pos = '"';
+	    ++pos;
+
 	    bson_oid_to_string(id, pos);
 	    pos += 24;
+
+	    *pos = '"';
+	    ++pos;
 	  }
 	  break;
 	case BSON_BOOL:

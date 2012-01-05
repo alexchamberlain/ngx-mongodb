@@ -789,6 +789,34 @@ static ngx_int_t ngx_http_mongodb_rest_get_handler(ngx_http_request_t* request, 
   return rc;
 }
 
+static ngx_int_t ngx_http_mongodb_rest_delete_handler(ngx_http_request_t* request, mongo * conn, bson_type type, const char * field, char * collection, const char * value) {
+  bson query;
+  mongo_cursor cursor;
+
+  if(!ngx_http_mongodb_rest_query_init(&query, type, field, value)) {
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  }
+
+  // ---------- RETRIEVE OBJECT ---------- //
+  mongo_cursor_init(&cursor, conn, "test.test");
+  mongo_cursor_set_query(&cursor, &query);
+
+  if(mongo_cursor_next(&cursor) != MONGO_OK) {
+    return NGX_HTTP_NOT_FOUND;
+  }
+
+  mongo_cursor_destroy(&cursor);
+  
+  if(mongo_remove(conn, "test.test", &query) != MONGO_OK) {
+    return NGX_HTTP_INTERNAL_SERVER_ERROR;
+  } else {
+    request->headers_out.status = NGX_HTTP_NO_CONTENT;
+    ngx_http_send_header(request);
+
+    return NGX_OK;
+  }
+}
+
 static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     ngx_http_mongodb_rest_loc_conf_t* mongodb_rest_conf;
     ngx_http_core_loc_conf_t* core_conf;
@@ -881,7 +909,7 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
 	  && m[3] == 'E'
 	  && m[4] == 'T'
 	  && m[5] == 'E') {
-	  rc = NGX_HTTP_NOT_ALLOWED;
+	  rc = ngx_http_mongodb_rest_delete_handler(request, &mongo_conn->conn, mongodb_rest_conf->type, (char*) mongodb_rest_conf->field.data, "test", value);
 	} else {
 	  rc = NGX_HTTP_NOT_ALLOWED;
 	}
