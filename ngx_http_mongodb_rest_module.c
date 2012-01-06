@@ -818,6 +818,79 @@ static ngx_int_t ngx_http_mongodb_rest_delete_handler(ngx_http_request_t* reques
   }
 }
 
+static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
+  u_char * p;
+  size_t len;
+
+  ngx_buf_t *buf, *next;
+  ngx_chain_t *cl;
+
+  ngx_buf_t *buffer;
+  ngx_chain_t out;
+
+  if(r->request_body == NULL
+    || r->request_body->bufs == NULL
+    || r->request_body->temp_file) {
+    return;
+  }
+
+  cl = r->request_body->bufs;
+  buf = cl->buf;
+
+  if(cl->next == NULL) {
+    p = buf->pos;
+    len = buf->last - buf->pos;
+  } else {
+    /* POST request did not fit into a single buffer, there must be 2. */
+    u_char * q;
+
+    next = cl->next->buf;
+    len = (buf->last - buf->pos) + (next->last - next->pos);
+
+    p = ngx_pnalloc(r->pool, len);
+    if(p == NULL) {
+      return;
+    }
+
+    q = ngx_cpymem(p, buf->pos, buf->last - buf->pos);
+    ngx_memcpy(q, next->pos, next->last - next->pos);
+  }
+
+  ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "%*s", len, p);
+
+  r->headers_out.status = NGX_HTTP_NO_CONTENT;
+  ngx_http_send_header(r);
+
+  /* Allocate space for the response buffer */
+  buffer = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+  if (buffer == NULL) {
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+		  "Failed to allocate response buffer");
+  }
+
+  /* Set up the buffer chain */
+  buffer->pos = NULL;
+  buffer->last = 0;
+  buffer->memory = 1;
+  buffer->last_buf = 1;
+  out.buf = buffer;
+  out.next = NULL;
+
+  ngx_http_finalize_request(r, ngx_http_output_filter(r, &out));
+}
+
+static ngx_int_t ngx_http_mongodb_rest_put_handler(ngx_http_request_t* r, mongo * conn, bson_type type, const char * field, char * collection, const char * value) {
+  ngx_int_t rc;
+
+  rc = ngx_http_read_client_request_body(r, ngx_http_mongodb_rest_put_read);
+
+  if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
+    return rc;
+  }
+
+  return NGX_DONE;
+}
+
 static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
     ngx_http_mongodb_rest_loc_conf_t* mongodb_rest_conf;
     ngx_http_core_loc_conf_t* core_conf;
@@ -888,7 +961,7 @@ static ngx_int_t ngx_http_mongodb_rest_handler(ngx_http_request_t* request) {
 	} else if(m[0] == 'P'
 	  && m[1] == 'U'
 	  && m[2] == 'T') {
-	  rc = NGX_HTTP_NOT_ALLOWED;
+	  rc = ngx_http_mongodb_rest_put_handler(request, &mongo_conn->conn, mongodb_rest_conf->type, (char*) mongodb_rest_conf->field.data, "test", value);
 	} else {
 	  rc = NGX_HTTP_NOT_ALLOWED;
 	}
