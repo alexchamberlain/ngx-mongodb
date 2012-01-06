@@ -1,0 +1,3 @@
+# Ideas for the future...
+
+* Move the mongo connection code to a separate module, so that multiple modules can use the same mongo connection in a single process. (See also: nginx-gridfs)
