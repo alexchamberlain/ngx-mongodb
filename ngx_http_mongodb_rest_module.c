@@ -61,6 +61,7 @@
 #include <mongodb-c/gridfs.h>
 
 #include "jsonbson.h"
+#include "jansson.h"
 
 /**
  * Types
@@ -828,6 +829,8 @@ static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
   ngx_buf_t *buffer;
   ngx_chain_t out;
 
+  bson b;
+
   if(r->request_body == NULL
     || r->request_body->bufs == NULL
     || r->request_body->temp_file) {
@@ -858,6 +861,30 @@ static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
 
   ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "%*s", len, p);
 
+  json_t * root;
+  json_error_t error;
+
+  root = json_loadb((char *) p, len, 0, &error);
+  if(root == NULL) {
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+		  "Failed to parse JSON. (%d) %s", error.line, error.text);
+    return;
+  }
+
+
+
+  json_decref(json);
+
+  //bson_init(&b, json_to_bson(p, len), 1);
+
+  /*if(b.data == 0) {
+    ngx_log_error(NGX_LOG_ERROR, r->connection->log, 0, "Failed to process: \"%*.s\"", len, p);
+  }*/
+
+  // TODO: Do something with the BSON object
+
+  //bson_destroy(&b);
+
   r->headers_out.status = NGX_HTTP_NO_CONTENT;
   ngx_http_send_header(r);
 
@@ -866,6 +893,7 @@ static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
   if (buffer == NULL) {
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
 		  "Failed to allocate response buffer");
+    return;
   }
 
   /* Set up the buffer chain */
