@@ -852,6 +852,7 @@ static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
 
     p = ngx_pnalloc(r->pool, len);
     if(p == NULL) {
+      ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
       return;
     }
 
@@ -888,23 +889,7 @@ static void ngx_http_mongodb_rest_put_read(ngx_http_request_t* r) {
   r->headers_out.status = NGX_HTTP_NO_CONTENT;
   ngx_http_send_header(r);
 
-  /* Allocate space for the response buffer */
-  buffer = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
-  if (buffer == NULL) {
-    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-		  "Failed to allocate response buffer");
-    return;
-  }
-
-  /* Set up the buffer chain */
-  buffer->pos = NULL;
-  buffer->last = 0;
-  buffer->memory = 1;
-  buffer->last_buf = 1;
-  out.buf = buffer;
-  out.next = NULL;
-
-  ngx_http_finalize_request(r, ngx_http_output_filter(r, &out));
+  ngx_http_finalize_request(r, NGX_HTTP_NO_CONTENT);
 }
 
 static ngx_int_t ngx_http_mongodb_rest_put_handler(ngx_http_request_t* r, mongo * conn, bson_type type, const char * field, char * collection, const char * value) {
